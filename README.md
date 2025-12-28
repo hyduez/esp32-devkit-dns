@@ -12,3 +12,5 @@ How to use: Once you have logged in to your own SSID (*ProtectMe-dns* by default
 Remember:
 - 198.168.4.1: for the first time or something bad happened to the network connection
 - 198.168.1.28: inside of your network, put it on `resolv.conf` on linux or go to your settings -> wifi's advanced configuration app.
+
+<img width="1921" height="1044" alt="image" src="https://github.com/user-attachments/assets/eae37629-47a1-44af-b0eb-862f40ac3272" />
