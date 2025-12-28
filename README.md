@@ -7,10 +7,10 @@ $ arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32 .
 
 To monitorize it you can use `picocom /dev/ttyUSB0 -b 115200 --imap lfcrlt`, `minicom -D /dev/ttyUSB0 -b 115200` or view live logs on the web server (credentials: root, protectme).
 
-How to use: Once you have logged in to your own SSID (*ProtectMe-net* by default) and entered your credentials (protectme), go to 198.168.4.1, select your network, and log in. ESP32 will now on the network you selected, it will display via Serial which is its IP. For my net, it's 192.168.1.28. Thus, my config panel will be avaliable at http://192.168.1.28/config.
+How to use: Once you have logged in to your own SSID (*ProtectMe-net* by default) and entered your credentials (protectme), go to 198.168.4.1, select your network, and log in. ESP32 will now on the network you selected, it will display via Serial which is its IP. Anyways, you can access to config panel via https://dns.me/ (once you are using the dns, otherwise us arp-scan or look on your serial terminal)
 
 Remember:
-- 198.168.4.1: inside of ESP32 network, for the first time or something bad happened to the network connection
+- 198.168.4.1: inside of ESP32 network, you'll only be here for the first time or if something bad happened to the network connection
 - 198.168.1.28: inside of your network, put it on `resolv.conf` on linux or go to your settings -> wifi's advanced configuration and DNS Resolution.
 
 Default Credentials:
