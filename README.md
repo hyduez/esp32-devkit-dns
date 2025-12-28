@@ -18,4 +18,11 @@ Default Credentials:
 - Password: protectme
 - User (for Config Panel): root
 
-<img width="1921" height="1044" alt="image" src="https://github.com/user-attachments/assets/35cd6eae-7be8-496c-b547-af8104d5f409" />
+<details>
+  <summary>ESP32 DevKit DNS Showcase</summary>
+  <img width="1921" height="1044" alt="image" src="https://github.com/user-attachments/assets/35cd6eae-7be8-496c-b547-af8104d5f409" />
+</details>
+<details>
+  <summary>DOH Test (DNS Leaks)</summary>
+  <img width="1011" height="682" alt="image" src="https://github.com/user-attachments/assets/438875c6-b6ac-4e9f-bc4e-4d1d6a71172e" />
+</details>
