@@ -18,6 +18,12 @@ String scannedSSIDs[10];
 int numScanned = 0;
 
 const char* blockedDomains[] = {
+  // "instagram.com",
+  // "facebook.com",
+  // "meta.com",
+  // "google.com",
+  // "android.com",
+
   "doubleclick.net", "googlesyndication.com", "gvt2.com", "googletagmanager.com",
   "googletagservices.com", "google-analytics.com", "analytics.google.com",
   "adservice.google.com", "ads.google.com", "admob.com", "adsense.com",
