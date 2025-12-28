@@ -147,7 +147,7 @@ void handleToggleDoH() {
   preferences.putBool("doh", useDoH);
   preferences.end();
   
-  String mode = useDoH ? "ENCRYPTED (DOH)" : "STANDARD (UDP)";
+  String mode = useDoH ? "ENCRYPTED (DoH)" : "STANDARD (UDP)";
   String html = "<!DOCTYPE html><html><head><title>Switching Mode</title>" + htmlStyle + "</head>"
                 "<body><div class='container'>"
                 "<h1>Mode Changed</h1>"
@@ -160,7 +160,7 @@ void handleToggleDoH() {
 
 void handleConfig() {
   if(!checkAuth()) return;
-  String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DOH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
+  String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DoH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
   String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DoH (Switch to Standard)</button></a>" 
                             : "<a href='/toggledoh'><button class='btn-green'>Enable DoH (Encrypt Traffic)</button></a>";
 
@@ -336,18 +336,15 @@ void resolveDoH(uint8_t* packetBuffer, int len) {
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient http;
-    
+    http.setReuse(true);
     if (http.begin(client, dohURL)) {
         http.addHeader("Content-Type", "application/dns-message");
         http.addHeader("Accept", "application/dns-message");
-        
         int httpResponseCode = http.POST(packetBuffer, len);
-        
         if (httpResponseCode == 200) {
             int respLen = http.getSize();
             uint8_t buffer[512]; 
             WiFiClient* stream = http.getStreamPtr();
-            
             udp.beginPacket(udp.remoteIP(), udp.remotePort());
             while (http.connected() && (respLen > 0 || respLen == -1)) {
                 size_t size = stream->available();
@@ -370,6 +367,7 @@ void resolveDoH(uint8_t* packetBuffer, int len) {
 }
 
 void setup() {
+  setCpuFrequencyMhz(240);
   Serial.begin(115200);
   delay(1000);
 
