@@ -9,6 +9,7 @@
 const char* apSSID = "ProtectMe-net";
 const char* apPassword = "protectme";
 const char* dohURL = "https://1.1.1.1/dns-query";
+const char* webUser = "root";
 
 WebServer server(80);
 Preferences preferences;
@@ -81,7 +82,16 @@ const char* blockedDomains[] = {
   "districtm.io", "teads.tv", "spotxchange.com", "indexexchange.com",
   "gumgum.com", "triplelift.com", "sovrn.com", "nativo.com", "mixpanel.com"
 };
+
 const int numBlocked = sizeof(blockedDomains) / sizeof(blockedDomains[0]);
+
+bool checkAuth() {
+  if (!server.authenticate(webUser, apPassword)) {
+    server.requestAuthentication();
+    return false;
+  }
+  return true;
+}
 
 void addLog(const String& line) {
   serialLog[logIndex] = line;
@@ -147,6 +157,7 @@ void handleToggleDoH() {
 }
 
 void handleConfig() {
+  if(!checkAuth()) return;
   String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DoH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
   String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DoH (Switch to Standard)</button></a>" 
                             : "<a href='/toggledoh'><button class='btn-green'>Enable DoH (Encrypt Traffic)</button></a>";
@@ -170,6 +181,7 @@ void handleConfig() {
 }
 
 void handleResetWiFi() {
+  if(!checkAuth()) return;
   preferences.begin("wifi", false);
   preferences.clear();
   preferences.end();
@@ -185,6 +197,7 @@ void handleResetWiFi() {
 }
 
 void handleReboot() {
+  if(!checkAuth()) return;
   String html = "<!DOCTYPE html><html><head><title>Rebooting...</title>" + htmlStyle + "</head>"
                 "<body><div class='container'>"
                 "<h1>Rebooting...</h1>"
@@ -237,6 +250,7 @@ void handleSave() {
 }
 
 void handleLog() {
+  if(!checkAuth()) return;
   String logHtml = "<!DOCTYPE html><html><head><title>Live Log</title>" + htmlStyle + "<meta http-equiv='refresh' content='3'></head>"
                    "<body><div class='container'>"
                    "<h1>Live Log</h1>"
@@ -361,7 +375,7 @@ void setup() {
   preferences.end();
 
   preferences.begin("settings", true);
-  useDoH = preferences.getBool("doh", false); // Default false
+  useDoH = preferences.getBool("doh", false);
   preferences.end();
 
   bool connectSuccess = false;
@@ -438,7 +452,6 @@ void loop() {
     uint8_t packetBuffer[512];
     int len = udp.read(packetBuffer, 512);
 
-    // 1. Extract Domain Name
     String domain = "";
     int pos = 12;
     while (pos < len && packetBuffer[pos] != 0) {
