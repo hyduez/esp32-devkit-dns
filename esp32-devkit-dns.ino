@@ -3,19 +3,37 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <NetworkUdp.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+const char* apSSID = "ProtectMe-net";
+const char* apPassword = "protectme";
+const char* dohURL = "https://1.1.1.1/dns-query";
 
 WebServer server(80);
 Preferences preferences;
-
-// you can customize how initial AP is going to appear
-const char* apSSID = "ProtectMe-net";
-const char* apPassword = "protectme";
+WiFiUDP udp;
 
 String staSSID = "";
 String staPassword = "";
-
 String scannedSSIDs[10];
 int numScanned = 0;
+
+bool useDoH = false;
+const int DNS_PORT = 53;
+const int LED_PIN = 2;
+
+unsigned long ledMillis = 0;
+int ledBrightness = 100;
+int fadeAmount = 5;
+bool protectionActive = false;
+unsigned long blockFlashEnd = 0;
+int blinkInterval = 0;
+unsigned long previousMillis = 0;
+
+#define LOG_LINES 50
+String serialLog[LOG_LINES];
+int logIndex = 0;
 
 const char* blockedDomains[] = {
   // "instagram.com",
@@ -63,24 +81,7 @@ const char* blockedDomains[] = {
   "districtm.io", "teads.tv", "spotxchange.com", "indexexchange.com",
   "gumgum.com", "triplelift.com", "sovrn.com", "nativo.com", "mixpanel.com"
 };
-
 const int numBlocked = sizeof(blockedDomains) / sizeof(blockedDomains[0]);
-
-const int DNS_PORT = 53;
-WiFiUDP udp;
-
-const int LED_PIN = 2;
-unsigned long ledMillis = 0;
-int ledBrightness = 100;
-int fadeAmount = 5;
-bool protectionActive = false;
-unsigned long blockFlashEnd = 0;
-int blinkInterval = 0;
-unsigned long previousMillis = 0;
-
-#define LOG_LINES 50
-String serialLog[LOG_LINES];
-int logIndex = 0;
 
 void addLog(const String& line) {
   serialLog[logIndex] = line;
@@ -96,13 +97,16 @@ const String htmlStyle =
   "p{margin:15px 0;font-size:1rem;text-align:center;}"
   "strong{color:#000;}"
   "hr{border:0;border-top:1px solid #ddd;margin:30px 0;}"
-  "button,input[type=submit]{width:100%;padding:12px;font-size:1rem;background:#eee;color:#000;border:1px solid #ccc;border-radius:4px;margin:10px 0;cursor:pointer;}"
+  "button,input[type=submit]{width:100%;padding:12px;font-size:1rem;background:#eee;color:#000;border:1px solid #ccc;border-radius:4px;margin:10px 0;cursor:pointer;transition:0.2s;}"
+  "button:hover{background:#ddd;}"
+  ".btn-green{background:#d4edda;border:1px solid #c3e6cb;color:#155724;}"
+  ".btn-red{background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;}"
   "input,select{width:100%;padding:12px;margin:10px 0;border:1px solid #ccc;border-radius:4px;font-size:1rem;box-sizing:border-box;}"
   ".footer{font-size:0.85rem;color:#555;text-align:center;margin-top:40px;}"
   ".terminal{font-family:'Courier New',monospace;font-size:0.9rem;background:#000;color:#0f0;padding:20px;border-radius:4px;overflow-x:auto;max-height:70vh;overflow-y:auto;white-space:pre-wrap;word-wrap:break-word;line-height:1.4;}"
   ".modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;}"
   ".modal-content{background:#fff;padding:30px;border-radius:8px;text-align:center;max-width:400px;}"
-  ".modal button{margin:10px;padding:12px 24px;}"
+  ".modal button{margin:10px;padding:12px 24px;width:auto;}"
   "</style>"
   "<meta name='viewport' content='width=device-width, initial-scale=1'>";
 
@@ -125,15 +129,37 @@ const String modalHTML =
   "}"
   "</script>";
 
+void handleToggleDoH() {
+  useDoH = !useDoH;
+  preferences.begin("settings", false);
+  preferences.putBool("doh", useDoH);
+  preferences.end();
+  
+  String mode = useDoH ? "ENCRYPTED (DoH)" : "STANDARD (UDP)";
+  String html = "<!DOCTYPE html><html><head><title>Switching Mode</title>" + htmlStyle + "</head>"
+                "<body><div class='container'>"
+                "<h1>Mode Changed</h1>"
+                "<p>New Mode: <strong>" + mode + "</strong></p>"
+                "<p>Redirecting...</p>"
+                "<script>setTimeout(function(){window.location.href='/config'}, 1000);</script>"
+                "</div></body></html>";
+  server.send(200, "text/html", html);
+}
+
 void handleConfig() {
+  String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DoH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
+  String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DoH (Switch to Standard)</button></a>" 
+                            : "<a href='/toggledoh'><button class='btn-green'>Enable DoH (Encrypt Traffic)</button></a>";
+
   String html = "<!DOCTYPE html><html><head><title>ESP32 DNS Tool</title>" + htmlStyle + "</head>"
                 "<body><div class='container'>"
                 "<h1>ESP32 DNS Tool</h1>"
-                "<p>Status: <strong>Active</strong></p>"
+                "<p>Status: <strong>" + modeStatus + "</strong></p>"
                 "<p>Network: <strong>" + WiFi.SSID() + "</strong></p>"
                 "<p>ESP32 IP: <strong>" + WiFi.localIP().toString() + "</strong></p>"
                 "<p>Blocking: <strong>" + String(numBlocked) + " domains</strong></p>"
                 "<hr>"
+                + toggleBtn +
                 "<a href='/resetwifi' onclick=\"return confirmAction('Are you sure you want to change WiFi network? This will clear saved credentials.', '/resetwifi')\"><button>Change WiFi Network</button></a>"
                 "<a href='/reboot' onclick=\"return confirmAction('Are you sure you want to reboot the device?', '/reboot')\"><button>Reboot Device</button></a>"
                 "<a href='/log'><button>View Live Log</button></a>"
@@ -152,7 +178,6 @@ void handleResetWiFi() {
                 "<h1>Resetting...</h1>"
                 "<p>WiFi credentials cleared.</p>"
                 "<p>Rebooting into configuration mode...</p>"
-                "<p class='footer'>Back in a moment.</p>"
                 "</div></body></html>";
   server.send(200, "text/html", html);
   delay(2000);
@@ -164,7 +189,6 @@ void handleReboot() {
                 "<body><div class='container'>"
                 "<h1>Rebooting...</h1>"
                 "<p>The device is restarting.</p>"
-                "<p class='footer'>See you soon.</p>"
                 "</div></body></html>";
   server.send(200, "text/html", html);
   delay(1000);
@@ -186,7 +210,7 @@ void handleRoot() {
                 "<input name='pass' type='password' placeholder='Password' required>"
                 "<input type='submit' value='CONNECT'>"
                 "</form>"
-                "<p class='footer'>Your traffic. Your rules.</p>"
+                "<p class='footer'>They think they own your traffic.<br>They are wrong.</p>"
                 "</div></body></html>";
   server.send(200, "text/html", html);
 }
@@ -206,7 +230,6 @@ void handleSave() {
                 "<h1>Saving...</h1>"
                 "<p>Credentials saved.</p>"
                 "<p>Rebooting to connect...</p>"
-                "<p class='footer'>Protection loading.</p>"
                 "</div></body></html>";
   server.send(200, "text/html", html);
   delay(2000);
@@ -231,12 +254,10 @@ void handleLog() {
 
 void updateLED() {
   unsigned long current = millis();
-
   if (blockFlashEnd > current) {
     analogWrite(LED_PIN, 255);
     return;
   }
-
   if (protectionActive) {
     if (current - ledMillis >= 20) {
       ledMillis = current;
@@ -254,24 +275,98 @@ void updateLED() {
   }
 }
 
+void buildDNSResponse(uint8_t* packetBuffer, int len, IPAddress resolvedIP) {
+    uint8_t response[512];
+    if (len > 512) return;
+    memcpy(response, packetBuffer, len);
+    
+    response[2] |= 0x80; // QR bit (Response)
+    response[3] |= 0x80; // RA bit (Recursion Available)
+    response[7] = 1;     // Answer count = 1
+    
+    int respLen = len;
+    response[respLen++] = 0xC0; response[respLen++] = 0x0C; 
+    response[respLen++] = 0x00; response[respLen++] = 0x01;
+    response[respLen++] = 0x00; response[respLen++] = 0x01;
+    response[respLen++] = 0x00; response[respLen++] = 0x00; 
+    response[respLen++] = 0x00; response[respLen++] = 0x3C; 
+    response[respLen++] = 0x00; response[respLen++] = 0x04; 
+    response[respLen++] = resolvedIP[0];
+    response[respLen++] = resolvedIP[1];
+    response[respLen++] = resolvedIP[2];
+    response[respLen++] = resolvedIP[3];
+    
+    udp.beginPacket(udp.remoteIP(), udp.remotePort());
+    udp.write(response, respLen);
+    udp.endPacket();
+}
+
+void resolveStandard(const String& domain, uint8_t* packetBuffer, int len) {
+    IPAddress resolvedIP;
+    if (WiFi.hostByName(domain.c_str(), resolvedIP)) {
+         addLog("-> STD Resolved: " + resolvedIP.toString());
+         buildDNSResponse(packetBuffer, len, resolvedIP);
+    } else {
+         addLog("-> STD Failed");
+    }
+}
+
+void resolveDoH(uint8_t* packetBuffer, int len) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    
+    if (http.begin(client, dohURL)) {
+        http.addHeader("Content-Type", "application/dns-message");
+        http.addHeader("Accept", "application/dns-message");
+        
+        int httpResponseCode = http.POST(packetBuffer, len);
+        
+        if (httpResponseCode == 200) {
+            int respLen = http.getSize();
+            uint8_t buffer[512]; 
+            WiFiClient* stream = http.getStreamPtr();
+            
+            udp.beginPacket(udp.remoteIP(), udp.remotePort());
+            while (http.connected() && (respLen > 0 || respLen == -1)) {
+                size_t size = stream->available();
+                if (size) {
+                    int c = stream->readBytes(buffer, ((size > sizeof(buffer)) ? sizeof(buffer) : size));
+                    udp.write(buffer, c);
+                    if (respLen > 0) respLen -= c;
+                }
+                delay(1);
+            }
+            udp.endPacket();
+            addLog("-> DoH Resolved (Secure)");
+        } else {
+            addLog("-> DoH Error: " + String(httpResponseCode));
+        }
+        http.end();
+    } else {
+        addLog("-> DoH Connect Failed");
+    }
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(2000);
+  delay(1000);
 
   pinMode(LED_PIN, OUTPUT);
   analogWrite(LED_PIN, 255);
-  delay(100);
-  ledBrightness = 100;
 
   preferences.begin("wifi", true);
   staSSID = preferences.getString("ssid", "");
   staPassword = preferences.getString("pass", "");
   preferences.end();
 
+  preferences.begin("settings", true);
+  useDoH = preferences.getBool("doh", false); // Default false
+  preferences.end();
+
   bool connectSuccess = false;
   if (staSSID != "") {
-    Serial.print("Trying saved WiFi: ");
-    Serial.println(staSSID);
+    Serial.print("Connecting to: "); Serial.println(staSSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(staSSID.c_str(), staPassword.c_str());
     unsigned long start = millis();
@@ -286,34 +381,22 @@ void setup() {
   }
 
   if (connectSuccess) {
-    Serial.println("\nConnected! ESP32 IP: " + WiFi.localIP().toString());
-    Serial.println("Ultra-Aggressive DNS Proxy started");
-    Serial.printf("Blocking %d domains\n", numBlocked);
-
+    Serial.println("\nConnected! IP: " + WiFi.localIP().toString());
+    Serial.printf("Mode: %s\n", useDoH ? "DoH (Secure)" : "Standard (Fast)");
+    
     protectionActive = true;
     blinkInterval = 0;
 
     IPAddress dns1(1, 1, 1, 1);
-    IPAddress dns2(1, 0, 0, 1);
-    WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), dns1, dns2);
+    WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), dns1);
 
     udp.begin(DNS_PORT);
 
-    server.on("/generate_204", []() { 
-      server.sendHeader("Location", "http://" + WiFi.localIP().toString() + "/config");
-      server.send(302, "text/plain", "");
-    });
-    server.on("/fwlink", []() { 
-      server.sendHeader("Location", "http://" + WiFi.localIP().toString() + "/config");
-      server.send(302, "text/plain", "");
-    });
-    server.on("/hotspot-detect.html", []() { 
-      server.sendHeader("Location", "http://" + WiFi.localIP().toString() + "/config");
-      server.send(302, "text/plain", "");
-    });
-    server.on("/success.html", []() { server.send(200, "text/plain", "success"); });
+    server.on("/generate_204", []() { server.sendHeader("Location", "/config"); server.send(302, "text/plain", ""); });
+    server.on("/fwlink", []() { server.sendHeader("Location", "/config"); server.send(302, "text/plain", ""); });
 
     server.on("/config", HTTP_GET, handleConfig);
+    server.on("/toggledoh", HTTP_GET, handleToggleDoH);
     server.on("/resetwifi", HTTP_GET, handleResetWiFi);
     server.on("/reboot", HTTP_GET, handleReboot);
     server.on("/log", HTTP_GET, handleLog);
@@ -324,38 +407,25 @@ void setup() {
     });
 
     server.begin();
-
-    Serial.println("Control panel: http://" + WiFi.localIP().toString() + "/config");
+    Serial.println("System Ready.");
   } else {
+    // AP MODE
     Serial.println("Connection failed → AP mode");
     protectionActive = false;
-    blinkInterval = 2000;
+    blinkInterval = 1000;
 
     WiFi.mode(WIFI_AP_STA);
     numScanned = WiFi.scanNetworks();
     if (numScanned > 10) numScanned = 10;
-    for (int i = 0; i < numScanned; i++) {
-      scannedSSIDs[i] = WiFi.SSID(i);
-    }
+    for (int i = 0; i < numScanned; i++) scannedSSIDs[i] = WiFi.SSID(i);
+    
     WiFi.mode(WIFI_AP);
     WiFi.softAP(apSSID, apPassword);
-
-    Serial.print("AP SSID: ");
-    Serial.println(apSSID);
-    Serial.print("Open http://");
-    Serial.println(WiFi.softAPIP());
-
+    
     server.on("/", handleRoot);
     server.on("/save", handleSave);
-    server.on("/generate_204", handleRoot);
-    server.on("/fwlink", handleRoot);
+    server.onNotFound(handleRoot);
     server.begin();
-
-    while (true) {
-      server.handleClient();
-      updateLED();
-      delay(10);
-    }
   }
 }
 
@@ -368,8 +438,7 @@ void loop() {
     uint8_t packetBuffer[512];
     int len = udp.read(packetBuffer, 512);
 
-    IPAddress clientIP = udp.remoteIP();
-
+    // 1. Extract Domain Name
     String domain = "";
     int pos = 12;
     while (pos < len && packetBuffer[pos] != 0) {
@@ -380,8 +449,7 @@ void loop() {
     domain.toLowerCase();
     if (domain.endsWith(".")) domain.remove(domain.length() - 1);
 
-    String queryLine = "DNS query from " + clientIP.toString() + ": " + domain;
-    addLog(queryLine);
+    addLog("DNS Query from " + udp.remoteIP().toString() + ": " + domain);
 
     bool isBlocked = false;
     for (int i = 0; i < numBlocked; i++) {
@@ -391,38 +459,18 @@ void loop() {
       }
     }
 
-    IPAddress resolvedIP(0, 0, 0, 0);
     if (isBlocked) {
-      addLog("-> BLOCKED (0.0.0.0)");
+      addLog("-> BLOCKED");
       blockFlashEnd = millis() + 100;
-    } else {
-      if (WiFi.hostByName(domain.c_str(), resolvedIP)) {
-        String resLine = "-> Resolved: " + resolvedIP.toString();
-        addLog(resLine);
+      IPAddress blockedIP(0, 0, 0, 0);
+      buildDNSResponse(packetBuffer, len, blockedIP);
+    } 
+    else {
+      if (useDoH) {
+         resolveDoH(packetBuffer, len);
       } else {
-        addLog("-> Upstream resolve failed (fallback 0.0.0.0)");
+         resolveStandard(domain, packetBuffer, len);
       }
     }
-
-    uint8_t response[512];
-    memcpy(response, packetBuffer, len);
-    response[2] |= 0x80;
-    response[3] |= 0x80;
-    response[7] = 1;
-    int respLen = len;
-    response[respLen++] = 0xC0; response[respLen++] = 0x0C;
-    response[respLen++] = 0x00; response[respLen++] = 0x01;
-    response[respLen++] = 0x00; response[respLen++] = 0x01;
-    response[respLen++] = 0x00; response[respLen++] = 0x00;
-    response[respLen++] = 0x00; response[respLen++] = 0x3C;
-    response[respLen++] = 0x00; response[respLen++] = 0x04;
-    response[respLen++] = resolvedIP[0];
-    response[respLen++] = resolvedIP[1];
-    response[respLen++] = resolvedIP[2];
-    response[respLen++] = resolvedIP[3];
-
-    udp.beginPacket(clientIP, udp.remotePort());
-    udp.write(response, respLen);
-    udp.endPacket();
   }
 }
