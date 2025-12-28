@@ -147,7 +147,7 @@ void handleToggleDoH() {
   preferences.putBool("doh", useDoH);
   preferences.end();
   
-  String mode = useDoH ? "ENCRYPTED (DoH)" : "STANDARD (UDP)";
+  String mode = useDoH ? "ENCRYPTED (DOH)" : "STANDARD (UDP)";
   String html = "<!DOCTYPE html><html><head><title>Switching Mode</title>" + htmlStyle + "</head>"
                 "<body><div class='container'>"
                 "<h1>Mode Changed</h1>"
@@ -161,8 +161,8 @@ void handleToggleDoH() {
 void handleConfig() {
   if(!checkAuth()) return;
   String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DOH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
-  String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DOH (Switch to Standard)</button></a>" 
-                            : "<a href='/toggledoh'><button class='btn-green'>Enable DOH (Encrypt Traffic)</button></a>";
+  String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DoH (Switch to Standard)</button></a>" 
+                            : "<a href='/toggledoh'><button class='btn-green'>Enable DoH (Encrypt Traffic)</button></a>";
 
   String html = "<!DOCTYPE html><html><head><title>ESP32 DNS Tool</title>" + htmlStyle + "</head><body>"
                 "<div class='container'>"
