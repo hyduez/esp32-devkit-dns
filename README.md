@@ -1,4 +1,4 @@
-Simple DNS hosted on an ESP32 DevKit v1 (no PSRAM). Add your URLs on blockedDomains[] and that's all. Enable DOH in the settings panel; it affects performance slightly. Hide your traffic from your ISP over HTTPS Encrypted Resolution.
+Simple DNS hosted on an ESP32 DevKit v1 (no PSRAM). Add your URLs on blockedDomains[] and that's all. Enable DOH in the settings panel; it affects performance slightly. Hide your traffic from your ISP over HTTPS Encrypted Resolution. (Not at all due you need a VPN, but for public places it's kinda lovely)
 
 ```shell
 $ arduino-cli compile --fqbn esp32:esp32:esp32 .
