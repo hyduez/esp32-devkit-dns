@@ -20,6 +20,8 @@ String staPassword = "";
 String scannedSSIDs[10];
 int numScanned = 0;
 
+long long totalBlocked = 0;
+
 bool useDoH = false;
 const int DNS_PORT = 53;
 const int LED_PIN = 2;
@@ -158,25 +160,30 @@ void handleToggleDoH() {
 
 void handleConfig() {
   if(!checkAuth()) return;
-  String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DoH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
-  String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DoH (Switch to Standard)</button></a>" 
-                            : "<a href='/toggledoh'><button class='btn-green'>Enable DoH (Encrypt Traffic)</button></a>";
+  String modeStatus = useDoH ? "<span style='color:green'>ENCRYPTED (DOH)</span>" : "<span style='color:blue'>STANDARD (Speed)</span>";
+  String toggleBtn = useDoH ? "<a href='/toggledoh'><button class='btn-red'>Disable DOH (Switch to Standard)</button></a>" 
+                            : "<a href='/toggledoh'><button class='btn-green'>Enable DOH (Encrypt Traffic)</button></a>";
 
-  String html = "<!DOCTYPE html><html><head><title>ESP32 DNS Tool</title>" + htmlStyle + "</head>"
-                "<body><div class='container'>"
+  String html = "<!DOCTYPE html><html><head><title>ESP32 DNS Tool</title>" + htmlStyle + "</head><body>"
+                "<div class='container'>"
                 "<h1>ESP32 DNS Tool</h1>"
                 "<p>Status: <strong>" + modeStatus + "</strong></p>"
                 "<p>Network: <strong>" + WiFi.SSID() + "</strong></p>"
                 "<p>ESP32 IP: <strong>" + WiFi.localIP().toString() + "</strong></p>"
-                "<p>Blocking: <strong>" + String(numBlocked) + " domains</strong></p>"
+                "<hr>"
+                "<p style='color: #444;'>"
+                "Protecting: <strong>" + String(numBlocked) + "</strong> Domains | "
+                "Blocked: <strong>" + String(totalBlocked) + "</strong>"
+                "</p>"
                 "<hr>"
                 + toggleBtn +
                 "<a href='/resetwifi' onclick=\"return confirmAction('Are you sure you want to change WiFi network? This will clear saved credentials.', '/resetwifi')\"><button>Change WiFi Network</button></a>"
                 "<a href='/reboot' onclick=\"return confirmAction('Are you sure you want to reboot the device?', '/reboot')\"><button>Reboot Device</button></a>"
                 "<a href='/log'><button>View Live Log</button></a>"
-                "<p class='footer'>They think they own your traffic.<br>They are wrong.</p>"
+                "<p class='footer'>They think they own your traffic.<br><strong>They are wrong.</strong></p>"
                 + modalHTML +
                 "</div></body></html>";
+
   server.send(200, "text/html", html);
 }
 
@@ -378,6 +385,10 @@ void setup() {
   useDoH = preferences.getBool("doh", false);
   preferences.end();
 
+  preferences.begin("shield", true);
+  totalBlocked = preferences.getInt("count", 0);
+  preferences.end();
+
   bool connectSuccess = false;
   if (staSSID != "") {
     Serial.print("Connecting to: "); Serial.println(staSSID);
@@ -473,6 +484,12 @@ void loop() {
     }
 
     if (isBlocked) {
+      totalBlocked++;
+      if (totalBlocked % 10 == 0) {
+        preferences.begin("shield", false);
+        preferences.putInt("count", totalBlocked);
+        preferences.end();
+      }
       addLog("-> BLOCKED");
       blockFlashEnd = millis() + 100;
       IPAddress blockedIP(0, 0, 0, 0);
